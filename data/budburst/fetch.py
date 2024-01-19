@@ -1,89 +1,51 @@
 import requests
-import json
+import csv
+from utilities import get_authorization_headers
 
-def get_token(email, password, device_name):
-    # API endpoint for getting the token
-    token_url = "https://budburst.org/api/sanctum/token"
+def write_observations(authorization_headers, observations_url):
+    
+    page = 1
+    has_more_pages = True
 
-    # Payload for the token request
-    token_payload = {
-        'email': email,
-        'password': password,
-        'device_name': device_name
-    }
+    with open("budburst.csv", mode="w", newline="", encoding="utf-8") as csv_file:
+        fieldnames = ['observation_id', 'latitude', 'longitude', 'observation_date', 'scientific_name', 'phenophase_id', 'plant_group_id', 'add_date', 'modified_date', 'site_species_id', 'report_id', 'is_youth_observation']
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        
+        # Write header row
+        writer.writeheader()
 
-    # Headers for the token request
-    token_headers = {
-        'Accept': 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded'
-    }
+        while has_more_pages:
+            params = {
+                'report_type': 'phenophase',
+                'per_page': 1000,  # 1000 is max per page
+                'page': page,
+                #'created_after': '2023-12-01',
+            }
 
-    # Make the request to get the token
-    response = requests.post(token_url, data=token_payload, headers=token_headers)
+            response = requests.get(observations_url, params=params, headers=authorization_headers)
+            data = response.json()
 
-    # Check if the request was successful (status code 200)
-    if response.status_code == 200:
-        # Split the response text using the pipe character
-        response_parts = response.text.split('|')
+            # Check if there are more pages
+            has_more_pages = page <= response.json()['meta']['last_page']
+            last_page = response.json()['meta']['last_page']
 
-        # Check if there are at least two parts in the response
-        if len(response_parts) >= 2:
-            # Extract the token from the second part
-            token = response_parts[1]
-            return token
-        else:
-            print("Unexpected response format. Unable to extract token.")
-            return None
-    else:
-        print("Token request failed with status code {}".format(response.status_code))
-        print("Response:", response.text)
-        return None
+            # Process the current page
+            for observation in data['data']:
+                writer.writerow(observation)
+                
+            print(f"Writing page {page} of {last_page} to CSV...")
 
-# Load configuration from the file
-with open('config.json') as config_file:
-    config = json.load(config_file)
+            # Update page number for the next iteration
+            page += 1
+            
+             # Break the loop if there are no more pages
+            if not has_more_pages:
+                break
+            
 
-# Extract values from the configuration
-email = config.get('email')
-password = config.get('password')
-device_name = config.get('device_name')
 
-if not email or not password or not device_name:
-    print("Error: Email, password, and device_name must be specified in the config file.")
-else:
-    # Call the function to get the token
-    token = get_token(email, password, device_name)
+authorization_headers = get_authorization_headers()
+observations_url = 'https://budburst.org/api/observations'
 
-    # Check if the token is obtained successfully
-    if token:
-        print("Token: {}".format(token))
-        observations_url = 'https://budburst.org/api/observations'
-
-        # Parameters for the request
-        params = {
-            'report_type': 'phenophase',  # or 'pollinators' or 'monarchs'
-            'per_page': 50,
-            'page': 1,
-            'created_after': 'YYYY-MM-DD',  # Replace with the actual date
-            'created_before': 'YYYY-MM-DD',  # Replace with the actual date
-            'modified_after': 'YYYY-MM-DD',  # Replace with the actual date
-            'modified_before': 'YYYY-MM-DD'  # Replace with the actual date
-        }
-
-        # Headers with the Authorization token
-        headers = {
-            'Authorization': f'Bearer {token}',
-            'Accept': 'application/json',
-        }
-
-        # Make the request to the observations endpoint
-        response = requests.get(observations_url, params=params, headers=headers)
-
-        # Check the response
-        if response.status_code == 200:
-            # Parse and print the response JSON
-            observations_data = response.json()
-            print(observations_data)
-        else:
-            print(f"End. Request failed with status code {response.status_code}")
-            print("Response:", response.text)
+write_observations(authorization_headers, observations_url)
+       
